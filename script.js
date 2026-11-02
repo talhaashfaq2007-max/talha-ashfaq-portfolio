@@ -1,302 +1,171 @@
+'use strict';
 (() => {
-  const root = document.documentElement;
-  const body = document.body;
-  const themeButton = document.querySelector('.theme-toggle');
-  const menuButton = document.querySelector('.menu-toggle');
-  const navLinks = document.querySelector('.nav-links');
+  document.documentElement.classList.add('js');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-  function setTheme(theme) {
-    const next = theme === 'light' ? 'light' : 'dark';
-    root.dataset.theme = next;
-    if (themeButton) {
-      themeButton.textContent = next === 'dark' ? '☼' : '☾';
-      themeButton.setAttribute('aria-label', next === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
-      themeButton.setAttribute('aria-pressed', String(next === 'light'));
-    }
-    try { localStorage.setItem('talha-theme', next); } catch (_) { /* storage may be disabled */ }
-  }
+  const header = $('.site-header');
+  const progress = $('.scroll-progress');
+  const menu = $('.menu-toggle');
+  const links = $('#nav-links');
+  const sections = $$('main section[id]');
 
-  let storedTheme = 'dark';
-  try { storedTheme = localStorage.getItem('talha-theme') || 'dark'; } catch (_) {}
-  setTheme(storedTheme);
-  themeButton?.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark'));
+  const updateScroll = () => {
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+    const amount = maxScroll > 0 ? (window.scrollY / maxScroll) * 100 : 0;
+    if (progress) progress.style.width = `${amount}%`;
+    if (header) header.classList.toggle('scrolled', window.scrollY > 26);
+  };
+  window.addEventListener('scroll', updateScroll, { passive: true });
+  window.addEventListener('resize', updateScroll, { passive: true });
+  updateScroll();
 
-  const currentFile = (location.pathname.split('/').pop() || 'index.html').toLowerCase();
-  document.querySelectorAll('.nav-links a').forEach(link => {
-    const target = new URL(link.href, location.href).pathname.split('/').pop().toLowerCase();
-    const active = target === currentFile;
-    link.classList.toggle('active', active);
-    if (active) link.setAttribute('aria-current', 'page');
+  const closeMenu = () => {
+    if (!menu || !links) return;
+    links.classList.remove('open');
+    menu.setAttribute('aria-expanded', 'false');
+    menu.setAttribute('aria-label', 'Open navigation menu');
+  };
+  menu?.addEventListener('click', () => {
+    const open = menu.getAttribute('aria-expanded') !== 'true';
+    menu.setAttribute('aria-expanded', String(open));
+    menu.setAttribute('aria-label', open ? 'Close navigation menu' : 'Open navigation menu');
+    links?.classList.toggle('open', open);
+  });
+  $$('#nav-links a').forEach(link => link.addEventListener('click', closeMenu));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+  document.addEventListener('click', e => {
+    if (links?.classList.contains('open') && !e.target.closest('.site-header')) closeMenu();
   });
 
-  function closeMenu() {
-    navLinks?.classList.remove('open');
-    menuButton?.setAttribute('aria-expanded', 'false');
-    if (menuButton) menuButton.textContent = '☰';
+  if ('IntersectionObserver' in window && !reducedMotion) {
+    const reveal = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) { entry.target.classList.add('visible'); reveal.unobserve(entry.target); }
+      }
+    }, { threshold: 0.08, rootMargin: '0px 0px -28px 0px' });
+    $$('.reveal').forEach(el => reveal.observe(el));
+  } else {
+    $$('.reveal').forEach(el => el.classList.add('visible'));
   }
-  menuButton?.addEventListener('click', () => {
-    const open = navLinks?.classList.toggle('open') || false;
-    menuButton.setAttribute('aria-expanded', String(open));
-    menuButton.textContent = open ? '×' : '☰';
-  });
-  navLinks?.querySelectorAll('a').forEach(a => a.addEventListener('click', closeMenu));
-  window.addEventListener('resize', () => { if (innerWidth > 820) closeMenu(); });
 
-  document.querySelectorAll('[data-year]').forEach(el => el.textContent = new Date().getFullYear());
+  if ('IntersectionObserver' in window) {
+    const spy = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        $$('#nav-links a').forEach(link => {
+          const active = link.getAttribute('href') === '#' + entry.target.id;
+          link.classList.toggle('active', active);
+          if (active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      });
+    }, { rootMargin: '-20% 0px -64% 0px', threshold: 0 });
+    sections.forEach(s => spy.observe(s));
+  }
 
-  const data = window.PORTFOLIO_DATA || {};
-  document.querySelectorAll('[data-cgpa]').forEach(el => el.textContent = data.cgpa || 'Add your CGPA');
-  document.querySelectorAll('[data-cgpa-note]').forEach(el => el.textContent = data.cgpaNote || 'Overall CGPA');
-
-  // Full-name typewriter: keep the complete name visible to assistive technology and type it on first load.
-  const nameTarget = document.querySelector('[data-name-typewriter]');
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (nameTarget) {
-    const fullName = data.name || 'Talha Ashfaq';
-    const [firstName, ...remainingName] = fullName.split(' ');
-    const firstPart = nameTarget.querySelector('.name-first');
-    const lastPart = nameTarget.querySelector('.name-last');
-    const lastName = `${remainingName.join(' ') || 'Ashfaq'}.`;
-    if (prefersReducedMotion) {
-      if (firstPart) firstPart.textContent = firstName || 'Talha';
-      if (lastPart) lastPart.textContent = lastName;
+  // Type the actual name character by character — first TALHA, then ASHFAQ.
+  // The complete name is kept as the heading's aria-label for screen readers.
+  const firstName = $('#hero-first-name');
+  const lastName = $('#hero-last-name');
+  const firstLine = $('#first-name-line');
+  const lastLine = $('#last-name-line');
+  if (firstName && lastName && firstLine && lastLine) {
+    if (reducedMotion) {
+      firstName.textContent = 'TALHA';
+      lastName.textContent = 'ASHFAQ';
+      firstLine.classList.remove('is-typing');
     } else {
-      const letters = [
-        ...Array.from(firstName || 'Talha').map(char => ({ target: firstPart, char })),
-        { target: null, char: ' ' },
-        ...Array.from(lastName).map(char => ({ target: lastPart, char }))
-      ];
-      let nameIndex = 0;
-      const typeName = () => {
-        if (nameIndex >= letters.length) return;
-        const item = letters[nameIndex++];
-        if (item.target) item.target.textContent += item.char;
-        window.setTimeout(typeName, item.char === ' ' ? 170 : 105);
+      firstName.textContent = '';
+      lastName.textContent = '';
+      const typeWord = (element, word, delay, onDone) => {
+        let letterIndex = 0;
+        const typeLetter = () => {
+          element.textContent = word.slice(0, ++letterIndex);
+          if (letterIndex < word.length) {
+            window.setTimeout(typeLetter, 100 + (letterIndex % 3) * 24);
+          } else {
+            window.setTimeout(onDone, 290);
+          }
+        };
+        window.setTimeout(typeLetter, delay);
       };
-      window.setTimeout(typeName, 420);
+      typeWord(firstName, 'TALHA', 400, () => {
+        firstLine.classList.remove('is-typing');
+        lastLine.classList.add('is-typing');
+        typeWord(lastName, 'ASHFAQ', 120, () => {
+          lastLine.classList.remove('is-typing');
+          lastLine.classList.add('is-finished');
+        });
+      });
     }
   }
 
-  // Character-by-character reveal for headings and key section introductions as they enter view.
-  const typeOnScrollTargets = document.querySelectorAll(
-    '.section-heading h2, .page-hero h1, .project-info h2, .experience-head h3, .contact-copy h2, .form-heading h2, .page-lead, .section-subtitle, .hero-description'
-  );
-  const wrapTextCharacters = (element) => {
-    if (element.dataset.charsWrapped) return;
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-    let index = 0;
-    nodes.forEach(node => {
-      const value = node.nodeValue;
-      if (!value || !value.trim()) return;
-      const fragment = document.createDocumentFragment();
-      Array.from(value).forEach(char => {
-        const span = document.createElement('span');
-        span.className = 'scroll-type-char';
-        span.setAttribute('aria-hidden', 'true');
-        span.style.setProperty('--char-delay', `${Math.min(index * 17, 1050)}ms`);
-        span.textContent = char;
-        span.style.whiteSpace = 'pre';
-        fragment.appendChild(span);
-        index += 1;
-      });
-      node.parentNode.replaceChild(fragment, node);
-    });
-    element.dataset.charsWrapped = 'true';
-    element.setAttribute('aria-label', element.textContent);
-  };
-  if (!prefersReducedMotion && 'IntersectionObserver' in window) {
-    const typeObserver = new IntersectionObserver(entries => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          wrapTextCharacters(entry.target);
-          entry.target.classList.add('is-typing');
-          typeObserver.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.22, rootMargin: '0px 0px -35px 0px' });
-    typeOnScrollTargets.forEach(el => typeObserver.observe(el));
+  const roles = ['Computer Science Student', 'Python Learner & Builder', 'AI Enthusiast', 'Aspiring Software Developer'];
+  const target = $('#type-target');
+  if (target) {
+    if (reducedMotion) { target.textContent = roles[0]; }
+    else {
+      let role = 0, pos = roles[0].length, erase = true;
+      target.textContent = roles[0];
+      const typeNext = () => {
+        const word = roles[role];
+        target.textContent = word.substring(0, pos);
+        if (!erase && pos < word.length) { pos += 1; setTimeout(typeNext, 68); }
+        else if (!erase) { erase = true; setTimeout(typeNext, 1900); }
+        else if (pos > 0) { pos -= 1; setTimeout(typeNext, 31); }
+        else { erase = false; role = (role + 1) % roles.length; setTimeout(typeNext, 240); }
+      };
+      setTimeout(typeNext, 1700);
+    }
   }
 
-  // Typewriter role animation (respects reduced-motion preferences).
-  document.querySelectorAll('[data-rotating-role]').forEach(el => {
-    const roles = ['Aspiring Software Developer', 'Computer Science Student', 'AI Enthusiast'];
-    if (prefersReducedMotion) return;
-    let roleIndex = 0;
-    let charIndex = el.textContent.length;
-    let deleting = true;
-    el.textContent = roles[0];
-    const type = () => {
-      const current = roles[roleIndex];
-      if (deleting) {
-        charIndex = Math.max(0, charIndex - 1);
-        el.textContent = current.slice(0, charIndex);
-        if (charIndex === 0) {
-          deleting = false;
-          roleIndex = (roleIndex + 1) % roles.length;
-          window.setTimeout(type, 240);
-          return;
-        }
-      } else {
-        charIndex = Math.min(roles[roleIndex].length, charIndex + 1);
-        el.textContent = roles[roleIndex].slice(0, charIndex);
-        if (charIndex === roles[roleIndex].length) {
-          deleting = true;
-          window.setTimeout(type, 1450);
-          return;
-        }
-      }
-      window.setTimeout(type, deleting ? 34 : 62);
-    };
-    window.setTimeout(type, 1500);
-  });
-
-  // Duplicate the ticker content for a seamless, continuously moving strip.
-  document.querySelectorAll('.ticker-track').forEach(track => {
-    if (!track.dataset.looped) {
-      const original = track.innerHTML;
-      track.insertAdjacentHTML('beforeend', original);
-      Array.from(track.children).slice(track.children.length / 2).forEach(item => {
-        item.setAttribute('aria-hidden', 'true');
-      });
-      track.dataset.looped = 'true';
-    }
-  });
-
-  // Add subtle staggered scroll reveals to key cards and progress units.
-  const staggerGroups = [
-    '.project-grid', '.project-list', '.strength-grid', '.skill-groups',
-    '.semester-strip', '.education-list', '.experience-list', '.quick-facts',
-    '.academic-grid', '.contact-grid'
-  ];
-  staggerGroups.forEach(selector => {
-    document.querySelectorAll(selector).forEach(group => {
-      Array.from(group.children).forEach((child, index) => {
-        if (!child.classList.contains('reveal')) child.classList.add('reveal-card');
-        child.style.setProperty('--reveal-delay', `${Math.min(index * 90, 450)}ms`);
-      });
+  if (!reducedMotion && window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
+    $$('.surface[data-spotlight]').forEach(card => {
+      card.addEventListener('pointermove', e => {
+        const box = card.getBoundingClientRect();
+        card.style.setProperty('--mx', `${e.clientX - box.left}px`);
+        card.style.setProperty('--my', `${e.clientY - box.top}px`);
+      }, { passive: true });
     });
-  });
-  document.querySelectorAll('.project-card,.project-detail-card,.experience-card,.strength-card,.skill-group,.academic-card,.fact-card,.contact-link-card,.education-item').forEach((card, index) => {
-    if (!card.classList.contains('reveal') && !card.classList.contains('reveal-card')) card.classList.add('reveal-card');
-    if (!card.style.getPropertyValue('--reveal-delay')) card.style.setProperty('--reveal-delay', `${(index % 4) * 75}ms`);
-  });
-
-  const revealItems = document.querySelectorAll('.reveal, .reveal-card');
-  if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const observer = new IntersectionObserver(entries => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-visible');
-          observer.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.12 });
-    revealItems.forEach(el => observer.observe(el));
-  } else revealItems.forEach(el => el.classList.add('is-visible'));
-
-  // Scroll progress indicator.
-  const scrollProgress = document.createElement('div');
-  scrollProgress.className = 'scroll-progress';
-  scrollProgress.setAttribute('aria-hidden', 'true');
-  document.body.appendChild(scrollProgress);
-  let scrollQueued = false;
-  const updateScrollProgress = () => {
-    const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-    const progress = scrollable > 0 ? (window.scrollY / scrollable) * 100 : 0;
-    scrollProgress.style.width = `${Math.min(100, Math.max(0, progress))}%`;
-    scrollQueued = false;
-  };
-  window.addEventListener('scroll', () => {
-    if (!scrollQueued) {
-      window.requestAnimationFrame(updateScrollProgress);
-      scrollQueued = true;
-    }
-  }, { passive: true });
-  updateScrollProgress();
-
-  // Cursor-following spotlight on fine-pointer devices only.
-  if (window.matchMedia('(pointer:fine)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    let pointerQueued = false;
-    let pointerX = 0;
-    let pointerY = 0;
-    document.addEventListener('pointermove', event => {
-      pointerX = event.clientX;
-      pointerY = event.clientY;
-      if (pointerQueued) return;
-      window.requestAnimationFrame(() => {
-        document.documentElement.style.setProperty('--pointer-x', `${pointerX}px`);
-        document.documentElement.style.setProperty('--pointer-y', `${pointerY}px`);
-        pointerQueued = false;
-      });
-      pointerQueued = true;
-      const card = event.target.closest('.project-card,.academic-card,.experience-body,.strength-card,.skill-group');
-      if (card) {
-        const rect = card.getBoundingClientRect();
-        card.style.setProperty('--card-x', `${event.clientX - rect.left}px`);
-        card.style.setProperty('--card-y', `${event.clientY - rect.top}px`);
-      }
+    const terminal = $('[data-tilt]');
+    terminal?.addEventListener('pointermove', e => {
+      const box = terminal.getBoundingClientRect();
+      const x = (e.clientX - box.left) / box.width - .5;
+      const y = (e.clientY - box.top) / box.height - .5;
+      terminal.style.transform = `rotateY(${x * 9 - 4}deg) rotateX(${-y * 7 + 2}deg) translateY(-4px)`;
     }, { passive: true });
+    terminal?.addEventListener('pointerleave', () => { terminal.style.transform = ''; });
   }
 
-  // Animate simple numeric highlights when they enter the viewport.
-  const animateNumber = (element) => {
-    if (element.dataset.counted) return;
-    const raw = element.textContent.trim();
-    if (!/^\d+$/.test(raw)) return;
-    const target = Number(raw);
-    element.dataset.counted = 'true';
-    const duration = 850;
-    const start = performance.now();
-    const tick = now => {
-      const p = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - p, 3);
-      element.textContent = String(Math.round(target * eased)).padStart(raw.length, '0');
-      if (p < 1) window.requestAnimationFrame(tick);
-      else element.textContent = raw;
-    };
-    window.requestAnimationFrame(tick);
-  };
-  if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const numberObserver = new IntersectionObserver(entries => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          animateNumber(entry.target);
-          numberObserver.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.65 });
-    document.querySelectorAll('.fact-card strong,.academic-meta strong,.semester b').forEach(el => numberObserver.observe(el));
-  }
+  const yearEl = $('#current-year');
+  if (yearEl) yearEl.textContent = String(new Date().getFullYear());
 
-  // Smooth fade between local portfolio pages (do not interfere with new tabs/downloads).
-  document.querySelectorAll('a[href]').forEach(link => {
-    const href = link.getAttribute('href');
-    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:') || link.target === '_blank' || link.hasAttribute('download')) return;
-    let targetUrl;
-    try { targetUrl = new URL(href, window.location.href); } catch (_) { return; }
-    if (targetUrl.origin !== window.location.origin || !/\.html?$/i.test(targetUrl.pathname)) return;
-    link.addEventListener('click', event => {
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-      event.preventDefault();
-      document.body.classList.add('page-leaving');
-      window.setTimeout(() => { window.location.href = targetUrl.href; }, 190);
-    });
+  const email = 'talha.ashfaq.2007@gmail.com';
+  const copyButton = $('#copy-email');
+  copyButton?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(email);
+      const previous = copyButton.innerHTML;
+      copyButton.textContent = 'Copied ✓';
+      window.setTimeout(() => { copyButton.innerHTML = previous; }, 1900);
+    } catch {
+      // Clipboard may not be available from file:// or insecure contexts.
+      window.location.href = `mailto:${email}`;
+    }
   });
 
-  const contactForm = document.getElementById('contact-form');
-  contactForm?.addEventListener('submit', event => {
-    event.preventDefault();
-    const name = document.getElementById('contact-name').value.trim();
-    const email = document.getElementById('contact-email').value.trim();
-    const subject = document.getElementById('contact-subject').value.trim();
-    const message = document.getElementById('contact-message').value.trim();
-    if (!name || !email || !subject || !message) return;
-    const bodyText = `Name: ${name}\nEmail: ${email}\n\n${message}`;
-    const mailto = `mailto:${data.email || 'talha.ashfaq.2007@gmail.com'}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
-    const note = document.getElementById('form-note');
-    if (note) note.textContent = 'Opening your email application. Review the draft and press Send there.';
-    location.href = mailto;
+  const contactForm = $('#contact-form');
+  contactForm?.addEventListener('submit', e => {
+    e.preventDefault();
+    if (!contactForm.reportValidity()) return;
+    const data = new FormData(contactForm);
+    const subject = String(data.get('subject') || '').trim();
+    const name = String(data.get('name') || '').trim();
+    const sender = String(data.get('email') || '').trim();
+    const message = String(data.get('message') || '').trim();
+    const body = `Hi Talha,\n\n${message}\n\nFrom: ${name}\nEmail: ${sender}`;
+    window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   });
 })();
